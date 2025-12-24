@@ -6,6 +6,7 @@ def split_df(df, split_by):
     
     df_list = []
     labels = []
+
     for element in df[split_by].unique():
         df_list.append( df[ df[split_by] == element ] )
         labels.append(str(element))

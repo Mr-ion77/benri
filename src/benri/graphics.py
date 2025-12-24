@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from data import split_df
+from .data import split_df
 
 def plot_boxplots(df_list, labels, value_column='test_auc', separation=None, split = None,
                   horizontals=[], trace_line=False, title = "Boxplot comparison of different experiments", X_axis=None, Y_axis=None, 
