@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from data import split_df
 
 def plot_boxplots(df_list, labels, value_column='test_auc', separation=None, split = None,
                   horizontals=[], trace_line=False, title = "Boxplot comparison of different experiments", X_axis=None, Y_axis=None, 
@@ -20,7 +21,7 @@ def plot_boxplots(df_list, labels, value_column='test_auc', separation=None, spl
         # This recursive part assumes a function df_list_f exists in your scope
         try:
             for i, df in enumerate(df_list):
-                df_list2, labels2 = df_list_f(df=df, split_by = split)
+                df_list2, labels2 = split_df(df=df, split_by = split)
                 plot_boxplots(df_list = df_list2, labels = labels2, value_column=value_column, separation=separation, split = None,
                       horizontals=horizontals, trace_line=trace_line, title = title + "  " + labels[i] , X_axis=X_axis, Y_axis=Y_axis,
                       TEXT_COLOR=TEXT_COLOR, BOX_COLOR=BOX_COLOR, BACKGROUND_COLOR=BACKGROUND_COLOR)
@@ -172,14 +173,3 @@ def plot_boxplots(df_list, labels, value_column='test_auc', separation=None, spl
         # --- 5. Show the Plot ---
         plt.tight_layout() 
         plt.show()
-
-def df_list_f(df, split_by):
-    
-    df_list = []
-    labels = []
-    print(df[split_by].unique())
-    for element in df[split_by].unique():
-        df_list.append( df[ df[split_by] == element ] )
-        labels.append(str(element))
-    
-    return df_list, labels

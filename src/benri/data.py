@@ -2,6 +2,16 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
+def split_df(df, split_by):
+    
+    df_list = []
+    labels = []
+    print(df[split_by].unique())
+    for element in df[split_by].unique():
+        df_list.append( df[ df[split_by] == element ] )
+        labels.append(str(element))
+    
+    return df_list, labels
 
 def aggregate_and_save_top_configs(df_results, graph_columns, table_dir, n=3):
     """Aggregate results by hyperparameter columns and save aggregated + top-n CSVs.
