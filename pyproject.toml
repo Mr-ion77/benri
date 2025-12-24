@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "benri"
+version = "0.0.1"
+authors = [{ name = "Mr-ion77", email = "mr.ion77@live.com" }]
+description = "Handy code snippets for dataframe manipulation and graphic visualizations"
+dependencies = [
+    "pandas", "numpy", "matplotlib", "seaborn"
+]
