@@ -1,6 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+from pathlib import Path
 
 def split_df(df, split_by):
     
@@ -27,6 +28,9 @@ def aggregate_and_save_top_configs(df, group_cols, value_column, table_dir, n=3)
         (agg, top_n) DataFrames for aggregated and top-n results.
     """
     # Prepare table dir
+    if isinstance(table_dir, str):
+        table_dir = Path(table_dir)
+        
     table_dir.mkdir(parents=True, exist_ok=True)
 
     if df is None or len(df) == 0:
