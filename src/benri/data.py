@@ -6,19 +6,19 @@ def split_df(df, split_by):
     
     df_list = []
     labels = []
-    print(df[split_by].unique())
     for element in df[split_by].unique():
         df_list.append( df[ df[split_by] == element ] )
         labels.append(str(element))
     
     return df_list, labels
 
-def aggregate_and_save_top_configs(df_results, graph_columns, table_dir, n=3):
+def aggregate_and_save_top_configs(df, group_cols, value_column, table_dir, n=3):
     """Aggregate results by hyperparameter columns and save aggregated + top-n CSVs.
 
     Args:
-        df_results: DataFrame or convertible sequence of dicts/rows.
-        graph_columns: list where last element is the value column, others are group cols.
+        df: DataFrame or convertible sequence of dicts/rows.
+        group_cols: list of columns to group by.
+        value_column: the column to compute median and std for.
         table_dir: Path where CSVs will be saved.
         n: number of top configurations to save (based on median descending).
 
@@ -28,24 +28,20 @@ def aggregate_and_save_top_configs(df_results, graph_columns, table_dir, n=3):
     # Prepare table dir
     table_dir.mkdir(parents=True, exist_ok=True)
 
-    # Determine columns
-    value_column = graph_columns[-1]
-    group_cols = graph_columns[:-1]
-
-    if df_results is None or len(df_results) == 0:
-        print("df_results is empty — nothing to aggregate or plot.")
+    if df is None or len(df) == 0:
+        print("df is empty — nothing to aggregate or plot.")
         return None, None
 
     # Ensure DataFrame
-    if not isinstance(df_results, pd.DataFrame):
+    if not isinstance(df, pd.DataFrame):
         try:
-            df_results = pd.DataFrame(df_results)
+            df = pd.DataFrame(df)
         except Exception:
-            print("Could not convert df_results to DataFrame.")
+            print("Could not convert df to DataFrame.")
             return None, None
 
     # Compute median and std for each grouping tuple
-    agg = df_results.groupby(group_cols)[value_column].agg(['median', 'std']).reset_index()
+    agg = df.groupby(group_cols)[value_column].agg(['median', 'std']).reset_index()
     agg['median_std'] = agg.apply(lambda r: f"{r['median']:.4f} ± {r['std']:.4f}", axis=1)
 
     # Save aggregated table
