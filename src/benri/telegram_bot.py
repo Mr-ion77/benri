@@ -3,8 +3,8 @@ import sys
 sys.modules['apscheduler'] = None
 import subprocess
 import re
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
 import pytz
 import json
 from data import aggregate_and_save_top_configs
@@ -14,7 +14,7 @@ import ast
 # ======= GLOBAL CONSTANTS =======
 MY_USER_ID = 6265691693
 STATE_DIR = "/home/carlosR/QTransformer/ExperimentsForThesis/"
-RESULTS_ROOT = "/home/carlosR/QTransformer_Results_and_Datasets/transformer_results/"
+RESULTS_ROOT = "/home/carlosR/QTransformer_Results_and_Datasets/"
 
 # --- Helpers ---
 
@@ -30,90 +30,93 @@ def get_screen_output(screen_id):
         return content
     return ""
 
-def find_folder_by_number(short_id):
-    """
-    If short_id is a number (e.g. '8'), looks for a folder starting with '8_'.
-    Otherwise, returns the short_id as is (assuming it's a full name).
-    """
-    if short_id.isdigit():
+def find_all_folders_by_number(short_id):
+    """Returns a list of all folders starting with 'number_'."""
+    matches = []
+    if str(short_id).isdigit():
         try:
-            # Look for a directory in STATE_DIR that starts with f"{short_id}_"
             for folder in os.listdir(STATE_DIR):
                 if folder.startswith(f"{short_id}_") and os.path.isdir(os.path.join(STATE_DIR, folder)):
-                    return folder
-        except Exception:
-            return short_id
-    return short_id
+                    matches.append(folder)
+        except Exception as e:
+            print(f"Error listing folders: {e}")
+    return sorted(matches)
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 async def summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != MY_USER_ID: return
-    if not context.args:
-        await update.message.reply_text("Usage: `/summary [number]`")
-        return
+    
+    # This handler now supports both the command and button clicks
+    query = update.callback_query
+    if query:
+        await query.answer()
+        folder_name = query.data.replace("sum_", "")
+    else:
+        if not context.args:
+            await update.message.reply_text("Usage: `/summary [number]`")
+            return
+        
+        matches = find_all_folders_by_number(context.args[0])
+        
+        if len(matches) == 0:
+            await update.message.reply_text(f"❌ No folders found starting with `{context.args[0]}_`")
+            return
+        
+        if len(matches) > 1:
+            # Create buttons for each match
+            keyboard = [
+                [InlineKeyboardButton(m, callback_data=f"sum_{m}")] for m in matches
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(
+                f"🤔 Multiple experiments found for `{context.args[0]}`. Which one do you want?",
+                reply_markup=reply_markup
+            )
+            return
+        
+        folder_name = matches[0]
 
-    folder_name = find_folder_by_number(context.args[0]) # e.g., '8_Experiment_...'
+    # --- Processing logic (same as before, using folder_name) ---
+    await process_summary_logic(update, folder_name)
+
+async def process_summary_logic(update, folder_name):
+    # Determine if we are replying to a message or a callback query
+    target = update.callback_query.message if update.callback_query else update.message
+    
     folder_path = os.path.join(STATE_DIR, folder_name)
     
     # 1. Find the script file: WIP_tests_*.py
-    script_file = None
-    for f in os.listdir(folder_path):
-        if f.startswith("WIP_tests_") and f.endswith(".py"):
-            script_file = os.path.join(folder_path, f)
-            break
+    script_file = next((f for f in os.listdir(folder_path) if f.startswith("WIP_tests_") and f.endswith(".py")), None)
     
     if not script_file:
-        await update.message.reply_text(f"❌ Could not find script `WIP_tests_*.py` in `{folder_name}`")
+        await target.reply_text(f"❌ No script found in `{folder_name}`")
         return
 
-    # 2. Extract variables from the script using Regex or ast
     try:
-        with open(script_file, "r") as f:
-            script_content = f.read()
+        script_full_path = os.path.join(folder_path, script_file)
+        with open(script_full_path, "r") as f:
+            content = f.read()
 
-        # Regex to find specific variables in the text
-        exp_id_match = re.search(r"'experiment_id':\s*'([^']+)'", script_content)
-        pixels_match = re.search(r"'pixels'\s*:\s*(\d+)", script_content)
-        # Use literal_eval for the list to be safe
-        graph_cols_match = re.search(r"graph_columns\s*=\s*(\[[^\]]+\])", script_content)
+        # Extract values (Using the regex from our previous step)
+        exp_id_val = re.search(r"'experiment_id':\s*'([^']+)'", content).group(1)
+        graph_cols = ast.literal_eval(re.search(r"graph_columns\s*=\s*(\[[^\]]+\])", content).group(1))
 
-        if not (exp_id_match and graph_cols_match):
-            await update.message.reply_text("❌ Could not parse `experiment_id` or `graph_columns` from script.")
-            return
-
-        exp_id_val = exp_id_match.group(1)
-        pixels_val = pixels_match.group(1) if pixels_match else "Unknown"
-        graph_columns = ast.literal_eval(graph_cols_match.group(1))
-
-        # 3. Access the CSV Results
-        csv_dir = os.path.join(RESULTS_ROOT, exp_id_val)
-        csv_path = os.path.join(csv_dir, "results_grid_search.csv")
-
-        if not os.path.exists(csv_path):
-            await update.message.reply_text(f"❌ CSV not found at:\n`{csv_path}`", parse_mode="Markdown")
-            return
-
-        # 4. Process Data
-        df = pd.read_csv(csv_path)
+        # 2. Path to CSV
+        csv_path = f"/home/carlosR/QTransformer_Results_and_Datasets/{exp_id_val}/results_grid_search.csv"
         
-        # Run your aggregation function
-        result_text, _ = aggregate_and_save_top_configs(
-            df, 
-            graph_columns[:-1], # group by everything except last
-            graph_columns[-1],  # target is 'test_auc'
-            table_dir=csv_dir
-        )
-        result_text = result_text[graph_columns[:-1] + ['median', 'std']].sort_values(by='median', ascending=False).to_string(index=False)
+        df = pd.read_csv(csv_path)
+        group_cols = graph_cols[:-1]
+        target_col = graph_cols[-1]
 
-        # 5. Send results
-        header = f"📊 *Summary for {folder_name}*\n📍 Exp ID: `{exp_id_val}`\n🖼 Pixels: `{pixels_val}`\n\n"
-        # If text is too long for Telegram (max 4096), send first chunk
-        if len(result_text) > 3500:
-            result_text = result_text[:3500] + "\n... (truncated)"
+        summary_df = df.groupby(group_cols)[target_col].agg(['median', 'std']).reset_index()
+        result_text = summary_df.sort_values(by='median', ascending=False).to_string(index=False)
 
-        await update.message.reply_text(f"{header}```\n{result_text}\n```", parse_mode="Markdown")
+        header = f"📊 *Summary:* `{folder_name}`\n"
+        await target.reply_text(f"{header}```\n{result_text[:3000]}\n```", parse_mode="Markdown")
 
     except Exception as e:
-        await update.message.reply_text(f"⚠️ Error processing summary: `{str(e)}`", parse_mode="Markdown")
+        await target.reply_text(f"❌ Error processing summary for `{folder_name}`: {e}")
 
 async def list_experiments(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != MY_USER_ID:
@@ -234,23 +237,54 @@ async def list_screens(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start_exp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != MY_USER_ID: return
-    if len(context.args) < 1:
-        await update.message.reply_text("Usage: `/start [folder_number]`")
-        return
     
-    # Resolve '8' to '8_Experiment_7_With_More_QVC'
-    folder_name = find_folder_by_number(context.args[0])
-    
-    # Assumes the script name is inside that folder
-    # You can customize the script name or pass it as a 2nd arg
-    script_path = os.path.join(STATE_DIR, folder_name, "WIP_tests_Transformer.py")
-    
-    if os.path.exists(script_path):
-        # Start screen session named exactly like the folder
-        subprocess.run(["screen", "-dmS", folder_name, "-h", "10000", "python3", script_path])
-        await update.message.reply_text(f"🚀 Started script in screen: `{folder_name}`")
+    query = update.callback_query
+    if query:
+        await query.answer()
+        folder_name = query.data.replace("start_", "")
     else:
-        await update.message.reply_text(f"❌ Script not found at `{script_path}`")
+        if not context.args:
+            await update.message.reply_text("Usage: `/start [number]`")
+            return
+        
+        matches = find_all_folders_by_number(context.args[0])
+        
+        if len(matches) == 0:
+            await update.message.reply_text(f"❌ No folders found starting with `{context.args[0]}_`")
+            return
+        
+        if len(matches) > 1:
+            keyboard = [[InlineKeyboardButton(m, callback_data=f"start_{m}")] for m in matches]
+            await update.message.reply_text(
+                f"🚀 Found multiple options for `{context.args[0]}`. Which one should I start?",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            return
+        
+        folder_name = matches[0]
+
+    # --- Trigger the Execution Logic ---
+    await execute_experiment_in_screen(update, folder_name)
+
+async def execute_experiment_in_screen(update, folder_name):
+    target = update.callback_query.message if update.callback_query else update.message
+    
+    folder_full_path = os.path.join(STATE_DIR, folder_name)
+    script_path = os.path.join(folder_full_path, "WIP_tests_Transformer.py")
+    bot_path = os.path.abspath(__file__)
+
+    if os.path.exists(script_path):
+        # The bash command with the '||' (OR) alert hook
+        inner_cmd = (
+            f"cd {folder_full_path} && "
+            f"python3 WIP_tests_Transformer.py || "
+            f"python3 {bot_path} --alert {folder_name}"
+        )
+        
+        subprocess.run(["screen", "-dmS", folder_name, "-h", "10000", "bash", "-c", inner_cmd])
+        await target.reply_text(f"✅ Started `{folder_name}`.\nYou'll be notified if it fails.")
+    else:
+        await target.reply_text(f"❌ Script not found: `{script_path}`")
 
 async def kill_exp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != MY_USER_ID: return
@@ -268,25 +302,26 @@ async def kill_exp(update: Update, context: ContextTypes.DEFAULT_TYPE):
 from telegram.ext import Application
 
 if __name__ == "__main__":
-    # We bypass the Builder and go straight to the Application class.
-    # We explicitly tell it NOT to use a job_queue here.
-    app = (
-        Application.builder()
-        .token("8369851856:AAGjGTo4349KUOB0FycE-sXGI1EOB3eLkxo")
-        .job_queue(None) 
-        .build()
-    )
+    # --- Emergency Alert CLI Mode ---
+    if len(sys.argv) > 2 and sys.argv[1] == "--alert":
+        import asyncio
+        from telegram import Bot
+        async def send_emergency():
+            bot = Bot(token="YOUR_TOKEN")
+            await bot.send_message(chat_id=MY_USER_ID, text=f"🚨 **CRASH:** Experiment `{sys.argv[2]}` failed.")
+        asyncio.run(send_emergency())
+        sys.exit(0)
 
-    # Note: If even the above fails, you can initialize it like this:
-    # app = Application(bot=Bot("TOKEN"), update_queue=asyncio.Queue())
-    # but let's try the builder with job_queue(None) again in this specific order.
-
-    app.add_handler(CommandHandler("screens", list_screens))
-    app.add_handler(CommandHandler("progress", progress))
-    app.add_handler(CommandHandler("start", start_exp))
-    app.add_handler(CommandHandler("kill", kill_exp))
-    app.add_handler(CommandHandler("experiments", list_experiments))
-    app.add_handler(CommandHandler("summary", summary))
+    # --- Standard Bot Mode ---
+    app = Application.builder().token("YOUR_TOKEN").job_queue(None).build()
     
-    print("🚀 : Bot is listening...")
+    # Handlers
+    app.add_handler(CommandHandler("start", start_exp))
+    app.add_handler(CommandHandler("summary", summary)) # Existing
+    
+    # Callback Handlers for Buttons
+    app.add_handler(CallbackQueryHandler(start_exp, pattern="^start_"))
+    app.add_handler(CallbackQueryHandler(summary, pattern="^sum_"))
+    
+    print("🚀 Bot is listening with selection and crash alerts...")
     app.run_polling()
