@@ -14,7 +14,7 @@ def split_df(df, split_by):
     
     return df_list, labels
 
-def aggregate_and_save_top_configs(df, group_cols, value_column, table_dir, n=3):
+def aggregate_and_save_top_configs(df, group_cols, value_column, table_dir, n=10):
     """Aggregate results by hyperparameter columns and save aggregated + top-n CSVs.
 
     Args:
