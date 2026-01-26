@@ -8,5 +8,5 @@ version = "0.0.1"
 authors = [{ name = "Mr-ion77", email = "mr.ion77@live.com" }]
 description = "Handy code snippets for dataframe manipulation and graphic visualizations"
 dependencies = [
-    "pandas", "numpy", "matplotlib", "seaborn"
+    "pandas", "numpy", "matplotlib", "seaborn", "pennylane", "torch"
 ]
