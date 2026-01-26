@@ -1,0 +1,15 @@
+pyproject.toml
+src/benri/__init__.py
+src/benri/data.py
+src/benri/graphics.py
+src/benri/telegram_bot.py
+src/benri.egg-info/PKG-INFO
+src/benri.egg-info/SOURCES.txt
+src/benri.egg-info/dependency_links.txt
+src/benri.egg-info/requires.txt
+src/benri.egg-info/top_level.txt
+src/benri/quantum/__init__.py
+src/benri/quantum/backend.py
+src/benri/quantum/fake_simulation.py
+src/benri/quantum/graphs.py
+src/benri/quantum/quanvolution.py

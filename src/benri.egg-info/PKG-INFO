@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: benri
+Version: 0.0.1
+Summary: Handy code snippets for dataframe manipulation and graphic visualizations
+Author-email: Mr-ion77 <mr.ion77@live.com>
+Requires-Dist: pandas
+Requires-Dist: numpy
+Requires-Dist: matplotlib
+Requires-Dist: seaborn
