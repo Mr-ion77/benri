@@ -60,7 +60,7 @@ class QuantumConv2D(nn.Module):
         super().__init__()
 
         if ancilla and channels_out != [-1]:
-            print(f'Please be ware that when ancilla is set to True channels_out must be [-1], but got {channels_out}.')
+            print(f'Please be ware that when ancilla is set to True channels_out should include [-1], but got {channels_out}.')
         
         self.invert_embedding = invert_embedding
         self.channels_out = channels_out 
@@ -232,6 +232,89 @@ class QuantumConv1D(nn.Module):
 
         # For 4-D input return (B, C*D, L_out, W)
         return torch.cat(outputs_by_channel, dim=1) if C > 1 else output[:,0,:,:] # (B, C*D, L_out, W)
+    
+class Convolution2D(nn.Module):
+    def __init__(self, kernel_size=3, stride=1, padding=0, channels_out=[4], channels_last=False, 
+                 pad_filler='median', bias=True):
+        super().__init__()
+
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.pad_filler = pad_filler
+        self.channels_last = channels_last
+        self.channels_out_list = channels_out
+        
+        # q represents the number of output features per input channel
+        # In your Quantum version, this is len(channels_out)
+        self.q = len(channels_out)
+
+        # The classical equivalent of the QuantumKernel per channel.
+        # We use a Linear layer because Unfold turns the convolution into a matrix multiplication.
+        # Input dim: kernel_size^2 | Output dim: q
+        self.classical_kernel = nn.Linear(kernel_size**2, self.q, bias=bias)
+
+        if isinstance(padding, int):
+            self.padding = {'Up': padding, 'Down': padding, 'Left': padding, 'Right': padding}
+        elif not isinstance(padding, dict):
+            raise ValueError("Padding must be an integer or a dict of 4 integers.")
+        else:
+            self.padding = padding
+
+        # Manual padding means we set unfold padding to 0
+        self.unfold = nn.Unfold(kernel_size=self.kernel_size, stride=self.stride, padding=0)
+
+    def forward(self, x):
+        """
+        x: (B, C, H, W) or (B, H, W, C) if channels_last is True
+        """
+        print(f"x.shape: {x.shape}")
+        # Handle channel ordering
+        if self.channels_last:
+            x = x.permute(0, 3, 1, 2)
+
+        if x.ndim == 4:
+            B, C, H, W = x.shape
+        elif x.ndim == 3:
+            B, C, H, W = 1, *x.shape
+        else:
+            raise ValueError(f"Expected 3D or 4D input, got {x.ndim}D")
+
+        # Calculate output dimensions
+        H_out = (H + self.padding['Up'] + self.padding['Down'] - self.kernel_size) // self.stride + 1
+        W_out = (W + self.padding['Left'] + self.padding['Right'] - self.kernel_size) // self.stride + 1
+
+        outputs_by_channel = []
+
+        for channel in range(C):
+            # Isolate channel: (B, 1, H, W)
+            y = x[:, channel, :, :].unsqueeze(1)
+            
+            # Apply your custom padding logic
+            y = custom_pad_2d(y, self.padding, self.pad_filler)
+
+            # Extract patches: (B, kernel_size^2, L) where L = H_out * W_out
+            patches = self.unfold(y)
+            patches = patches.transpose(1, 2)  # (B, L, kernel_size^2)
+
+            # Flatten for the linear layer (classical kernel)
+            patch_vectors = patches.reshape(-1, self.kernel_size**2) # (B*L, patch_dim)
+
+            # Apply classical kernel
+            kernel_out = self.classical_kernel(patch_vectors)  # (B*L, q)
+
+            # Reshape back to (B, q, H_out, W_out)
+            output = kernel_out.view(B, -1, self.q).transpose(1, 2).view(B, self.q, H_out, W_out)
+            outputs_by_channel.append(output)
+
+        if C > 1:
+            # Concatenate and permute to match your specific quantum channel grouping logic
+            full_out = torch.cat(outputs_by_channel, dim=1)  # (B, C * q, H_out, W_out)
+            full_out = full_out.view(B, C, self.q, H_out, W_out).permute(0, 2, 1, 3, 4).contiguous()
+            return full_out.view(B, self.q * C, H_out, W_out)
+        else:
+            print(f"C<=1")
+            # Matches your return output[:,0,:,:] for single channel
+            return outputs_by_channel[0][:, 0, :, :]
 
 
 
