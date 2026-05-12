@@ -20,7 +20,7 @@ def aggregate_and_save_top_configs(df, group_cols, value_column, table_dir, n=10
     Args:
         df: DataFrame or convertible sequence of dicts/rows.
         group_cols: list of columns to group by.
-        value_column: the column to compute median and std for.
+        value_column: the column to compute mean, median and std for.
         table_dir: Path where CSVs will be saved.
         n: number of top configurations to save (based on median descending).
 
@@ -45,8 +45,8 @@ def aggregate_and_save_top_configs(df, group_cols, value_column, table_dir, n=10
             print("Could not convert df to DataFrame.")
             return None, None
 
-    # Compute median and std for each grouping tuple
-    agg = df.groupby(group_cols)[value_column].agg(['median', 'std']).reset_index()
+    # Compute mean, median and std for each grouping tuple
+    agg = df.groupby(group_cols)[value_column].agg(['mean', 'median', 'std']).reset_index()
     agg['median_std'] = agg.apply(lambda r: f"{r['median']:.4f} ± {r['std']:.4f}", axis=1)
 
     # Save aggregated table
@@ -66,7 +66,7 @@ def aggregate_and_save_top_configs(df, group_cols, value_column, table_dir, n=10
 
     # Print concise view
     try:
-        print(top_n[group_cols + ['median', 'std']].to_string(index=False))
+        print(top_n[group_cols + ['mean', 'median', 'std']].to_string(index=False))
     except Exception:
         print(top_n.to_string(index=False))
 
