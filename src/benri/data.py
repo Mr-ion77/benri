@@ -2,6 +2,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
+from scipy import stats
+import itertools
 
 def split_df(df, split_by):
     
@@ -71,3 +73,59 @@ def aggregate_and_save_top_configs(df, group_cols, value_column, table_dir, n=10
         print(top_n.to_string(index=False))
 
     return agg, top_n
+
+
+def compare_group_distributions(df, group_cols, value_col='test_auc', alpha=0.05):
+    """
+    Groups a DataFrame, tests for normality (Shapiro-Wilk), and applies 
+    conditional one-tailed pairwise tests (Welch's t-test or Mann-Whitney U).
+    """
+    print(f"--- Grouping by: {group_cols} | Evaluating: '{value_col}' ---")
+    groups = df.groupby(group_cols)
+    
+    # 1. Normality Testing
+    normality_results = {}
+    print("\n--- Shapiro-Wilk Normality Test ---")
+    
+    for name, group in groups:
+        data = group[value_col].dropna()
+        
+        if len(data) < 3:
+            print(f"Group {name}: Not enough data (n={len(data)}). Defaulting to non-normal.")
+            normality_results[name] = False
+            continue
+            
+        stat, p_value = stats.shapiro(data)
+        is_normal = p_value > alpha
+        normality_results[name] = is_normal
+        
+        print(f"Group {name}: p-value = {p_value:.4f} -> Normal: {is_normal}")
+
+    # 2. Pairwise Hypothesis Testing
+    print("\n--- Pairwise Hypothesis Testing (One-Tailed) ---")
+    group_keys = list(groups.groups.keys())
+    pairs = list(itertools.combinations(group_keys, 2))
+
+    if not pairs:
+        print("Error: Not enough groups to perform pairwise testing.")
+        return normality_results
+
+    for g1_key, g2_key in pairs:
+        data1 = groups.get_group(g1_key)[value_col].dropna()
+        data2 = groups.get_group(g2_key)[value_col].dropna()
+        
+        # Conditional selection
+        if normality_results.get(g1_key, False) and normality_results.get(g2_key, False):
+            test_name = "Welch's t-test"
+            _, p_val_g1_greater = stats.ttest_ind(data1, data2, equal_var=False, alternative='greater')
+            _, p_val_g2_greater = stats.ttest_ind(data2, data1, equal_var=False, alternative='greater')
+        else:
+            test_name = "Mann-Whitney U test"
+            _, p_val_g1_greater = stats.mannwhitneyu(data1, data2, alternative='greater')
+            _, p_val_g2_greater = stats.mannwhitneyu(data2, data1, alternative='greater')
+
+        print(f"\nComparing {g1_key} vs {g2_key} using {test_name}:")
+        print(f"  H1: {g1_key} > {g2_key} -> p-value = {p_val_g1_greater:.4e}")
+        print(f"  H1: {g2_key} > {g1_key} -> p-value = {p_val_g2_greater:.4e}")
+
+    return normality_results
