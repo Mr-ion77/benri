@@ -78,8 +78,15 @@ def aggregate_and_save_top_configs(df, group_cols, value_column, table_dir, n=10
 def compare_group_distributions(df, group_cols, value_col='test_auc', alpha=0.05):
     """
     Groups a DataFrame, tests for normality (Shapiro-Wilk), and applies 
-    conditional one-tailed pairwise tests (Welch's t-test or Mann-Whitney U).
+    conditional one-tailed pairwise tests (Welch's t-test or Mann-Whitney U)
+    with significance stars.
     """
+    def get_stars(p):
+        if p < 0.001: return "***"
+        if p < 0.01: return "**"
+        if p < 0.05: return "*"
+        return ""
+
     print(f"--- Grouping by: {group_cols} | Evaluating: '{value_col}' ---")
     groups = df.groupby(group_cols)
     
@@ -124,8 +131,11 @@ def compare_group_distributions(df, group_cols, value_col='test_auc', alpha=0.05
             _, p_val_g1_greater = stats.mannwhitneyu(data1, data2, alternative='greater')
             _, p_val_g2_greater = stats.mannwhitneyu(data2, data1, alternative='greater')
 
+        stars1 = get_stars(p_val_g1_greater)
+        stars2 = get_stars(p_val_g2_greater)
+
         print(f"\nComparing {g1_key} vs {g2_key} using {test_name}:")
-        print(f"  H1: {g1_key} > {g2_key} -> p-value = {p_val_g1_greater:.4e}")
-        print(f"  H1: {g2_key} > {g1_key} -> p-value = {p_val_g2_greater:.4e}")
+        print(f"  H1: {g1_key} > {g2_key} -> p-value = {p_val_g1_greater:.4e} {stars1}")
+        print(f"  H1: {g2_key} > {g1_key} -> p-value = {p_val_g2_greater:.4e} {stars2}")
 
     return normality_results
